@@ -1,11 +1,11 @@
 import os
 import csv
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, List
 from datetime import datetime
 
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from data_service import get_summary_statistics
 
@@ -20,8 +20,8 @@ CONVERSATION_HISTORY: Dict[str, List[Dict[str, str]]] = {}
 
 # Schemas
 class AskRequest(BaseModel):
-    prompt: str = Field(..., description="User query prompt (max 500 chars)")
-    conversation_id: str = Field(..., description="Conversation identifier for context tracking")
+    prompt: str
+    conversation_id: str
 
 
 class AskResponse(BaseModel):
@@ -38,7 +38,7 @@ class AILogsStatsResponse(BaseModel):
     average_prompt_length: float
 
 
-def init_logs_file() -> None:
+def init_logs_file():
     """Ensure the ai_logs.csv file exists with proper headers."""
     if not os.path.exists(AI_LOGS_FILE):
         with open(AI_LOGS_FILE, "w", newline="", encoding="utf-8") as f:
@@ -46,7 +46,7 @@ def init_logs_file() -> None:
             writer.writerow(["timestamp", "prompt_length", "status"])
 
 
-def log_ai_interaction(prompt_length: int, status: str) -> None:
+def log_ai_interaction(prompt_length: int, status: str):
     """
     Log timestamp, prompt length, and status to ai_logs.csv.
     Strict privacy: Never logs API keys or raw prompt contents.
@@ -60,7 +60,7 @@ def log_ai_interaction(prompt_length: int, status: str) -> None:
         logger.error(f"Failed to write to ai_logs.csv: {err}")
 
 
-def build_dynamic_system_prompt() -> str:
+def build_dynamic_system_prompt():
     """
     Build a dynamic system prompt using live analytical results:
     top 3 performers, team average completion rate, and strongest performing city.
@@ -96,7 +96,7 @@ def build_dynamic_system_prompt() -> str:
     return system_prompt
 
 
-def generate_mock_response(prompt: str, system_prompt: str) -> str:
+def generate_mock_response(prompt: str, system_prompt: str):
     """Generate a reliable, contextual mock response when no Anthropic API key is provided."""
     stats = get_summary_statistics() or {}
     mean_rate = stats.get("team_mean_completion_rate", 45.0)
@@ -111,7 +111,7 @@ def generate_mock_response(prompt: str, system_prompt: str) -> str:
     )
 
 
-def ask_assistant(prompt: str, conversation_id: str) -> AskResponse:
+def ask_assistant(prompt: str, conversation_id: str):
     """
     Handle the AI assistant query workflow with conversation history,
     try/except/finally logging to ai_logs.csv, and mock fallback.
@@ -180,7 +180,7 @@ def ask_assistant(prompt: str, conversation_id: str) -> AskResponse:
         log_ai_interaction(prompt_length=prompt_len, status=status)
 
 
-def get_logs_statistics() -> AILogsStatsResponse:
+def get_logs_statistics():
     """
     Read ai_logs.csv and compute total requests, success rate, and average prompt length.
     """

@@ -1,11 +1,10 @@
 import os
 import time
 import logging
-from typing import List, Dict, Any, Optional
-from contextlib import asynccontextmanager
+from typing import List, Dict, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Response, Depends, HTTPException, Header, Query, status
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, Header, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -44,52 +43,38 @@ load_dotenv()
 APP_API_KEY = os.environ.get("APP_API_KEY")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
+# Validate APP_API_KEY
+if not APP_API_KEY:
+    logger.warning(
+        "WARNING: [APP_API_KEY] is missing from the environment. "
+        "Protected mutating endpoints will reject requests until configured."
+    )
+else:
+    logger.info("SUCCESS: [APP_API_KEY] loaded successfully.")
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Application startup and shutdown lifecycle handler.
-    Checks environment keys and initializes datasets.
-    """
-    logger.info("Starting up FastAPI Performance Analytics Service...")
+# Validate ANTHROPIC_API_KEY
+if not ANTHROPIC_API_KEY:
+    logger.warning(
+        "NOTICE: [ANTHROPIC_API_KEY] is missing. "
+        "AI assistant will run in intelligent Mock response mode."
+    )
+else:
+    logger.info("SUCCESS: [ANTHROPIC_API_KEY] loaded successfully.")
 
-    # Validate APP_API_KEY
-    if not APP_API_KEY:
-        logger.warning(
-            "WARNING: [APP_API_KEY] is missing from the environment. "
-            "Protected mutating endpoints will reject requests until configured."
-        )
-    else:
-        logger.info("SUCCESS: [APP_API_KEY] loaded successfully.")
+# Warm up caches and verify tasks.json
+try:
+    load_tasks()
+    get_data()
+    logger.info("Data caching and task persistence initialized.")
+except Exception as err:
+    logger.warning(f"Initial data warmup encountered an issue: {err}")
 
-    # Validate ANTHROPIC_API_KEY
-    if not ANTHROPIC_API_KEY:
-        logger.warning(
-            "NOTICE: [ANTHROPIC_API_KEY] is missing. "
-            "AI assistant will run in intelligent Mock response mode."
-        )
-    else:
-        logger.info("SUCCESS: [ANTHROPIC_API_KEY] loaded successfully.")
-
-    # Warm up caches and verify tasks.json
-    try:
-        load_tasks()
-        get_data()
-        logger.info("Data caching and task persistence initialized.")
-    except Exception as err:
-        logger.warning(f"Initial data warmup encountered an issue: {err}")
-
-    yield
-
-    logger.info("Shutting down FastAPI Performance Analytics Service...")
 
 
 # Initialize FastAPI app
 app = FastAPI(
     title="Team Performance & AI Analytics API",
     description="FastAPI service for team analytics, task management, and AI assistance.",
-    version="1.0.0",
-    lifespan=lifespan
 )
 
 # CORS Configuration - Restricted strictly to http://localhost:5173
@@ -137,15 +122,12 @@ async def validation_error_handler(request: Request, exc: ValidationError):
 
 
 # Dependencies
-def pagination_params(
-    page: int = Query(1, ge=1, description="Page number starting at 1"),
-    page_size: int = Query(10, ge=1, le=100, description="Number of items per page")
-) -> Dict[str, int]:
+def pagination_params(page: int = 1, page_size: int = 100):
     """Reusable dependency providing pagination parameters."""
     return {"page": page, "page_size": page_size}
 
 
-def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Key")) -> str:
+def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Key")):
     """
     Security dependency: Validates X-API-Key header against APP_API_KEY.
     Returns 401 Unauthorized if missing or mismatched.
@@ -165,8 +147,8 @@ def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Key")) -
 
 @app.get("/stats/users", summary="Get sorted and paginated user performance metrics")
 def get_users_performance_stats(
-    sort_by: str = Query("completion_rate", description="Field to sort by: completion_rate, total_tasks, completed_tasks"),
-    order: str = Query("desc", description="Sort order: 'asc' or 'desc'"),
+    sort_by: str = "completion_rate",
+    order: str = "desc",
     pagination: Dict[str, int] = Depends(pagination_params)
 ):
     df = get_user_performance_df()
@@ -257,15 +239,13 @@ def list_tasks(pagination: Dict[str, int] = Depends(pagination_params)):
 @app.post("/tasks", response_model=TaskOut, status_code=status.HTTP_201_CREATED, summary="Create a new task")
 def add_new_task(
     task_in: TaskIn,
-    _auth: str = Depends(verify_api_key)
-):
+    _auth: str = Depends(verify_api_key)):
     try:
         return create_task(task_in)
     except ValidationError as err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err.message)
 
 
-# CRITICAL REQUIREMENT: /tasks/overdue must be defined BEFORE /tasks/{task_id}
 @app.get("/tasks/overdue", response_model=List[TaskOverdueOut], summary="List overdue incomplete tasks with days_late")
 def list_overdue_tasks(pagination: Dict[str, int] = Depends(pagination_params)):
     overdue_tasks = get_overdue_tasks()

@@ -2,12 +2,12 @@ import os
 import json
 import logging
 from typing import Optional, List, Dict, Any
-from datetime import datetime, date
+from datetime import datetime
 
 import requests
 import pandas as pd
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -43,12 +43,12 @@ class ValidationError(Exception):
 
 # Pydantic Models
 class TaskIn(BaseModel):
-    title: str = Field(..., description="Task title (cannot be empty)")
-    user_id: int = Field(..., description="ID of assigned user")
-    due_date: str = Field(..., description="Due date in YYYY-MM-DD format")
-    priority: int = Field(..., description="Priority level between 1 and 3")
-    done: bool = Field(default=False, description="Completion status")
-    notes: Optional[str] = Field(default=None, description="Optional notes (excluded from TaskOut)")
+    title: str
+    user_id: int
+    due_date: str
+    priority: int
+    done: bool = False
+    notes: Optional[str] = None
 
 
 class TaskOut(BaseModel):
@@ -69,9 +69,8 @@ class TaskOverdueOut(BaseModel):
     done: bool
     days_late: int
 
-
 # Data Ingestion
-def fetch_json(path: str) -> Optional[Any]:
+def fetch_json(path: str):
     """
     Fetch JSON payload from upstream API with timeout=5 and raise_for_status.
     Returns None if a RequestException occurs.
@@ -85,8 +84,7 @@ def fetch_json(path: str) -> Optional[Any]:
         logger.error(f"Error fetching data from {url}: {err}")
         return None
 
-
-def get_data(force_refresh: bool = False) -> tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+def get_data(force_refresh: bool = False):
     """
     Load users and todos into DataFrames and cache them globally.
     Returns (users_df, todos_df).
@@ -126,8 +124,7 @@ def get_data(force_refresh: bool = False) -> tuple[Optional[pd.DataFrame], Optio
 
     return df_users, df_todos
 
-
-def get_valid_user_ids() -> set[int]:
+def get_valid_user_ids():
     """Retrieve all valid user IDs from cached/fetched users."""
     users_df, _ = get_data()
     if users_df is not None and not users_df.empty:
@@ -136,7 +133,7 @@ def get_valid_user_ids() -> set[int]:
 
 
 # Data Analysis
-def get_user_performance_df() -> Optional[pd.DataFrame]:
+def get_user_performance_df():
     """
     Merge todos and users, calculate aggregated performance metrics per user,
     and sort descending by completion percentage.
@@ -167,7 +164,7 @@ def get_user_performance_df() -> Optional[pd.DataFrame]:
     return grouped
 
 
-def get_summary_statistics() -> Optional[Dict[str, Any]]:
+def get_summary_statistics():
     """
     Calculate summary statistics including NumPy mean and standard deviation,
     top 3 performers, and strongest performing city.
@@ -201,7 +198,7 @@ def get_summary_statistics() -> Optional[Dict[str, Any]]:
     }
 
 
-def get_low_performers() -> Optional[List[Dict[str, Any]]]:
+def get_low_performers():
     """
     Identify employees whose completion rate is below the team average
     using boolean indexing.
@@ -218,7 +215,7 @@ def get_low_performers() -> Optional[List[Dict[str, Any]]]:
     return low_performers_df.to_dict(orient="records")
 
 
-def get_cities_pivot() -> Optional[List[Dict[str, Any]]]:
+def get_cities_pivot():
     """
     Build a pivot table of cities versus task completion status (aggfunc='count').
     """
@@ -262,7 +259,7 @@ def get_cities_pivot() -> Optional[List[Dict[str, Any]]]:
 
 
 # Task CRUD & JSON Persistence
-def load_tasks() -> List[Dict[str, Any]]:
+def load_tasks():
     """
     Load tasks from tasks.json file.
     Handles FileNotFoundError gracefully by creating tasks.json if missing.
@@ -299,13 +296,13 @@ def load_tasks() -> List[Dict[str, Any]]:
         return []
 
 
-def save_tasks(tasks: List[Dict[str, Any]]) -> None:
+def save_tasks(tasks: List[Dict[str, Any]]):
     """Save tasks list to tasks.json."""
     with open(TASKS_FILE, "w", encoding="utf-8") as f:
         json.dump(tasks, f, indent=2, ensure_ascii=False)
 
 
-def validate_task_payload(task_in: TaskIn) -> None:
+def validate_task_payload(task_in: TaskIn):
     """
     Validate title is not empty after strip(), priority is 1..3,
     and user exists in users dataset. Raises ValidationError on failure.
@@ -322,7 +319,7 @@ def validate_task_payload(task_in: TaskIn) -> None:
         raise ValidationError(f"User with user_id {task_in.user_id} does not exist.")
 
 
-def create_task(task_in: TaskIn) -> TaskOut:
+def create_task(task_in: TaskIn):
     """Create a new task, persist to tasks.json, and return TaskOut."""
     validate_task_payload(task_in)
     tasks = load_tasks()
@@ -351,7 +348,7 @@ def create_task(task_in: TaskIn) -> TaskOut:
     )
 
 
-def get_task_by_id(task_id: int) -> TaskOut:
+def get_task_by_id(task_id: int):
     """Retrieve a single task by ID or raise TaskNotFoundError."""
     tasks = load_tasks()
     for t in tasks:
@@ -367,7 +364,7 @@ def get_task_by_id(task_id: int) -> TaskOut:
     raise TaskNotFoundError(task_id)
 
 
-def update_task_by_id(task_id: int, task_in: TaskIn) -> TaskOut:
+def update_task_by_id(task_id: int, task_in: TaskIn):
     """Update a task by ID or raise TaskNotFoundError."""
     validate_task_payload(task_in)
     tasks = load_tasks()
@@ -397,7 +394,7 @@ def update_task_by_id(task_id: int, task_in: TaskIn) -> TaskOut:
     raise TaskNotFoundError(task_id)
 
 
-def delete_task_by_id(task_id: int) -> None:
+def delete_task_by_id(task_id: int):
     """Delete a task by ID or raise TaskNotFoundError."""
     tasks = load_tasks()
     initial_length = len(tasks)
@@ -409,7 +406,7 @@ def delete_task_by_id(task_id: int) -> None:
     save_tasks(filtered)
 
 
-def get_overdue_tasks() -> List[TaskOverdueOut]:
+def get_overdue_tasks():
     """
     Return incomplete tasks whose due date is in the past,
     including days_late computed using pd.to_datetime and dt.days.
